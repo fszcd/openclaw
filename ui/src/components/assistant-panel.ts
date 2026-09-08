@@ -1,10 +1,9 @@
-import "../styles/rail-header.css";
 import { consume } from "@lit/context";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
-import type { RouteId } from "../app-route-paths.ts";
 import "./openclaw-mascot.ts";
+import type { RouteId } from "../app-route-paths.ts";
 import { chatInputOwnerForContext } from "../app/chat-input-owner.ts";
 import { applicationContext, type ApplicationContext } from "../app/context.ts";
 import {
@@ -19,7 +18,10 @@ import { OpenClawLightDomElement } from "../lit/openclaw-element.ts";
 import { SubscriptionsController } from "../lit/subscriptions-controller.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import { CHAT_ROUTE_READY_EVENT } from "../pages/chat/chat-history-events.ts";
-import { CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT } from "../pages/chat/chat-history-events.ts";
+import {
+  CHAT_PANE_LIFECYCLE_CHANGED_EVENT,
+  CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT,
+} from "../pages/chat/chat-history-events.ts";
 import { buildHomeWorkContext, subscribeChatWorkContext } from "../pages/chat/chat-work-context.ts";
 import type { ChatPaneElement } from "../pages/chat/route-draft-focus-handoff.ts";
 import {
@@ -40,6 +42,7 @@ import { renderLazyElementState } from "./lazy-view-error.ts";
 import { renderLoadingState } from "./loading-state.ts";
 import { CUSTODIAN_PANEL_TOGGLE_EVENT, HOME_PANEL_TOGGLE_EVENT } from "./panel-toggle-contract.ts";
 import "../pages/custodian/custodian-surface.ts";
+import "../styles/rail-header.css";
 import "../styles/assistant-panel.css";
 
 const HOME_SESSION_ELEMENT = {
@@ -65,6 +68,7 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
   @property({ type: Boolean }) pageRouteFailed = false;
   @state() private homeStarted = false;
   private pendingPrimaryPane: ChatPaneElement | null = null;
+  private reportedHomePresentationPending = false;
   @state() private destination: AssistantDestination = "custodian";
   private readonly homeLoader = new LazyCustomElementRequestController(this);
   @property({ type: Number }) minimizeRequestId = 0;
@@ -183,6 +187,27 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
     this.dockLayout.syncReservation();
   }
 
+  get homePresentationPending(): boolean {
+    return (
+      this.dockLayout.open &&
+      this.destination === "home" &&
+      this.available &&
+      !this.suppressed &&
+      this.homeLoader.visibleState?.status !== "error" &&
+      !this.querySelector("openclaw-home-session openclaw-chat-pane")
+    );
+  }
+
+  override updated(): void {
+    const pending = this.homePresentationPending;
+    if (pending !== this.reportedHomePresentationPending) {
+      this.reportedHomePresentationPending = pending;
+      this.dispatchEvent(
+        new Event(CHAT_PANE_LIFECYCLE_CHANGED_EVENT, { bubbles: true, composed: true }),
+      );
+    }
+  }
+
   private primaryChatPane(): ChatPaneElement | undefined {
     const root = this.closest("openclaw-app-shell") ?? this.parentElement;
     return [
@@ -267,11 +292,7 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
   }
 
   private get suppressed(): boolean {
-    if (this.destination === "custodian") {
-      return this.custodianSuppressed;
-    }
-    const context = this.context;
-    if (!context || this.pageRouteId !== "chat") {
+    if (this.destination === "home" && !this.context) {
       return false;
     }
     return isAssistantDestinationSuppressed({

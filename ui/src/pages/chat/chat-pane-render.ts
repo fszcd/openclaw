@@ -73,7 +73,7 @@ import { workspaceResultConflictFromPlacement } from "./workspace-conflict.ts";
 
 export class ChatPane extends ChatPaneLayoutRender {
   override render() {
-    const state = this.state;
+    const { state, startupPresentation, initialPresentationManaged } = this;
     if (!state) {
       return html`<main class="app-shell app-shell--booting" aria-busy="true"></main>`;
     }
@@ -147,6 +147,9 @@ export class ChatPane extends ChatPaneLayoutRender {
     });
     const placementStartup = this.context.placementStartup.get(state.sessionKey);
     const sendHoldReason = chatSendHoldReason(state, state.sessionKey, placementStartup !== null);
+    const initialPending = initialPresentationManaged && startupPresentation.stage === "pending";
+    const initialConnectionRecovery =
+      initialPending && state.connected && state.client && !state.client.recoveryScopeReady;
     const placementStartupPending =
       placementStartup !== null && placementStartup.phase !== "failed";
     const sessionParticipationBlocked = this.sessionParticipationTracker.resolve({
@@ -329,6 +332,7 @@ export class ChatPane extends ChatPaneLayoutRender {
     });
     const composerAvailability = {
       canSend:
+        (startupPresentation.stage === "ready" || state.connected) &&
         sessionDisabledBanner?.kind !== "composer-replacement" &&
         (catalogKey
           ? this.catalogSession?.canContinue === true
@@ -345,7 +349,7 @@ export class ChatPane extends ChatPaneLayoutRender {
         (placementComposer.state.kind === "failed" && !placementComposer.state.recoveryAction
           ? placementComposer.failedUnavailableMessage
           : null) ??
-        (placementStartup ? null : sendHoldReason),
+        (placementStartup || initialConnectionRecovery ? null : sendHoldReason),
       disabledReasonTone:
         placementComposer.busyMessage || (sessionParticipationBlocked && !suggestionViewer)
           ? ("info" as const)
@@ -362,14 +366,13 @@ export class ChatPane extends ChatPaneLayoutRender {
       paneId: this.presentationId,
       sessionKey: state.sessionKey,
       announceTranscript: this.active && this.presented,
-      onSessionKeyChange: (next) => {
-        this.onPaneSessionChange?.(this.paneId, next);
-      },
+      onSessionKeyChange: (next) => this.onPaneSessionChange?.(this.paneId, next),
       thinkingLevel: state.chatThinkingLevel,
       autoExpandToolCalls: state.chatVerboseLevel === "full",
       showThinking: state.settings.chatShowThinking,
       showToolCalls: state.settings.chatShowToolCalls,
       persistCommentary: state.settings.chatPersistCommentary !== false,
+      startupLoading: startupPresentation.stage !== "ready",
       loading: catalogKey ? this.catalogLoading : state.chatLoading,
       sending:
         placementStartupPending ||
@@ -445,7 +448,10 @@ export class ChatPane extends ChatPaneLayoutRender {
       realtimeTalkVideoPending: state.realtimeTalkVideoPending,
       realtimeTalkCameraError: state.realtimeTalkCameraError,
       connected: state.connected,
-      offline: gatewaySnapshot.offlineStable,
+      initialMetadataPending: initialPending,
+      initialAssistantName: startupPresentation.initialAssistantName,
+      initialPresentationManaged,
+      offline: !initialPending && gatewaySnapshot.offlineStable,
       gatewayClient: state.client,
       composerHoldToRecord: state.settings.composerHoldToRecord,
       realtimeTalkInputDeviceId: state.settings.realtimeTalkInputDeviceId,
@@ -653,12 +659,9 @@ export class ChatPane extends ChatPaneLayoutRender {
       agentsList: state.agentsList,
       currentAgentId,
       ...chatProps,
-      onAgentChange: (agentId) => {
-        this.onPaneSessionChange?.(this.paneId, buildAgentMainSessionKey({ agentId }));
-      },
-      onSessionSelect: (next) => {
-        this.onPaneSessionChange?.(this.paneId, next);
-      },
+      onAgentChange: (agentId) =>
+        this.onPaneSessionChange?.(this.paneId, buildAgentMainSessionKey({ agentId })),
+      onSessionSelect: (next) => this.onPaneSessionChange?.(this.paneId, next),
       canvasPluginSurfaceUrl: state.canvasPluginSurfaceUrl,
       boardProvider: board.provider,
       onOpenSidebar: state.handleOpenSidebar,

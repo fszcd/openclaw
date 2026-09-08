@@ -1,5 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ref, type RefOrCallback } from "lit/directives/ref.js";
+import { t } from "../i18n/index.ts";
+import { icons } from "./icons.ts";
 import "../styles/rail-header.css";
 import "../styles/chat/startup-layout.css";
 import "../styles/chat/composer-surface.css";
@@ -24,6 +26,7 @@ type ChatComposerSurfaceInput = {
   lead: ComposerContent;
   context?: ComposerContent;
   controls?: ComposerContent;
+  reserveControls?: boolean;
   actions: ComposerContent;
 };
 
@@ -69,7 +72,7 @@ export function renderChatComposerSurface(props: {
                     <div class="agent-chat__composer-meta agent-chat__composer-context">
                       ${input.context}
                     </div>
-                    ${input.controls !== nothing ? html` <div class="agent-chat__composer-controls">${input.controls}</div> ` : nothing}
+                    ${input.reserveControls || (input.controls && input.controls !== nothing) ? html`<div class="agent-chat__composer-controls ${input.reserveControls ? "agent-chat__composer-controls--reserved" : ""}">${input.controls}</div>` : nothing}
                     <div class="agent-chat__composer-actions">${input.actions}</div>
                   </div>
                 </div>
@@ -80,4 +83,38 @@ export function renderChatComposerSurface(props: {
       ${props.afterInput}
     </div>
   `;
+}
+
+export function renderPendingChatComposer(placeholder: string, reservedHeight?: number) {
+  if (reservedHeight !== undefined) {
+    return renderChatComposerSurface({
+      beforeInput: html`<div style="height:${reservedHeight}px"></div>`,
+    });
+  }
+  return renderChatComposerSurface({
+    input: {
+      reserveControls: true,
+      editor: html`<textarea disabled placeholder=${placeholder} rows="1"></textarea>`,
+      lead: html`<wa-dropdown
+        class="agent-chat__attach-menu agent-chat__capability-menu"
+        placement="top-start"
+        .open=${false}
+        data-view="root"
+        ><button
+          slot="trigger"
+          type="button"
+          class="agent-chat__input-btn agent-chat__input-btn--attach"
+          disabled
+        >
+          ${icons.plus}
+        </button></wa-dropdown
+      >`,
+      actions: html`<span class="chat-mobile-primary-action chat-desktop-primary-action">
+        <button class="chat-send-btn chat-send-btn--send" disabled>
+          ${icons.arrowUp}
+          <span class="agent-chat__control-label">${t("chat.runControls.send")}</span>
+        </button>
+      </span>`,
+    },
+  });
 }

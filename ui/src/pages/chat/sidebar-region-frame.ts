@@ -1,6 +1,12 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
-import { sidebarDock, sidebarMainPanel, isSidebarSlotVisible } from "./sidebar-layout-geometry.ts";
+import {
+  sidebarActivePanel,
+  sidebarDock,
+  sidebarMainPanel,
+  sidebarSidePanels,
+  isSidebarSlotVisible,
+} from "./sidebar-layout-geometry.ts";
 import type { SidebarLayout } from "./sidebar-layout-types.ts";
 
 export function renderSidebarRegionFrame(params: {
@@ -34,4 +40,35 @@ export function renderSidebarRegionFrame(params: {
     </div>
     <div class="sidebar-region__right-runtime">${params.runtime ?? nothing}</div>
   </div>`;
+}
+
+export function renderPendingSidebarRegion(
+  layout: SidebarLayout,
+  collapsed: boolean,
+  content: TemplateResult | typeof nothing | null = nothing,
+) {
+  if (!layout.columns[0]) {
+    return nothing;
+  }
+  const main = sidebarMainPanel(layout);
+  const panel =
+    main && main.slot !== "conversation" && !(layout.expanded && layout.expandedSide)
+      ? main
+      : sidebarActivePanel(layout);
+  const promoted = panel !== undefined && panel.id === layout.mainPanelId;
+  return html`
+    ${!collapsed && layout.open && !layout.expanded ? html`<resizable-divider inert class="sidebar-column__divider" orientation=${sidebarDock(layout) === "bottom" ? "horizontal" : "vertical"}></resizable-divider>` : nothing}
+    ${sidebarSidePanels(layout).length ? html`<div class="rail-header side-panel__header" data-region-header="side" aria-hidden="true"></div>` : nothing}
+    <div
+      class="side-panel__panel"
+      data-region=${promoted ? "main" : "side"}
+      ?hidden=${
+        panel
+          ? panel.slot === "conversation" || !isSidebarSlotVisible(layout, panel.slot)
+          : !layout.open || (layout.expanded && !layout.expandedSide)
+      }
+    >
+      ${content}
+    </div>
+  `;
 }

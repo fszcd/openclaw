@@ -7,6 +7,7 @@ import {
   type TemplateResult,
 } from "lit";
 import {
+  consumePreparedDockPanelLayout,
   writeDockPanelReservation,
   type DockPanelLayoutStore,
   type DockPanelPlacement,
@@ -60,7 +61,7 @@ export class DockLayoutController<TDock extends DockPanelPlacement> implements R
       this.open = this.options.isAvailable();
       return;
     }
-    const layout = this.options.layout.load();
+    const layout = consumePreparedDockPanelLayout(this.options.layout);
     this.open = layout.open && this.options.isAvailable();
     this.dock = layout.dock;
     this.height = layout.height;

@@ -26,7 +26,7 @@ import {
   type SidebarLayout,
   type SidebarSlotId,
 } from "./sidebar-layout.ts";
-import { renderSidebarRegionFrame } from "./sidebar-region-frame.ts";
+import { renderPendingSidebarRegion, renderSidebarRegionFrame } from "./sidebar-region-frame.ts";
 
 const DETAIL_FULL_MESSAGE_MAX_CHARS = 500_000;
 type LazyPanelRuntime = {
@@ -180,9 +180,7 @@ export function renderSidebarRegion(params: {
     primary: params.primary,
     controller:
       regionError !== undefined
-        ? regionError === null
-          ? (regionLoading ?? null)
-          : null
+        ? nothing
         : html`<openclaw-chat-sidebar-region
             .layout=${params.layout}
             .panelDefinitions=${panelDefinitions}
@@ -193,7 +191,10 @@ export function renderSidebarRegion(params: {
             .narrow=${params.narrow}
             .availableWidth=${params.availableWidth}
           ></openclaw-chat-sidebar-region>`,
-    runtime: regionError ?? null,
+    runtime:
+      regionError !== undefined
+        ? renderPendingSidebarRegion(params.layout, collapsed, regionError ?? regionLoading ?? null)
+        : null,
   });
 }
 

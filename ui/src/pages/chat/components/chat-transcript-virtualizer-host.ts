@@ -35,6 +35,7 @@ import {
   syncScrollMargin,
 } from "./chat-transcript-geometry.ts";
 import { reconcileTranscriptHeaderMargin } from "./chat-transcript-header.ts";
+import { ChatTranscriptInitialLayout } from "./chat-transcript-initial-layout.ts";
 import {
   reconcileChatTranscriptInteractionResize,
   resolveChatTranscriptInteractionAnchor,
@@ -73,11 +74,14 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
   private observedWidth: number | null = null;
   private observedHeight: number | null = null;
   private contentReady = false;
+  private readonly initialLayout: ChatTranscriptInitialLayout;
+  get initialLayoutReady(): boolean {
+    return this.initialLayout.ready;
+  }
   // The in-flow history header's fixed height, folded into scrollMargin.
   // appliedHeaderHeight is what the current virtualizer margin already carries.
   private headerHeight = 0;
   private appliedHeaderHeight = 0;
-  private implicitEndAnchorPending: boolean;
   private pendingScrollFrame: number | null = null;
   private readonly messageReveal = new ChatMessageReveal();
   // Lit calls refs before newly rendered nodes are connected. Resolve the
@@ -156,6 +160,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       this.pendingRowMeasureFrame = null;
       if (element === this.scrollElement) {
         this.measureConnectedRows();
+        this.initialLayout.update();
       }
     });
   }
@@ -228,7 +233,6 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     private readonly callbacks: TranscriptCallbacks = {},
   ) {
     this.positionRail = new PositionRailGutterController(this, () => this.threadInnerElement);
-    this.implicitEndAnchorPending = initialOffset === null;
     this.virtualizerController = new VirtualizerController(this, {
       count: 0,
       getScrollElement: () => this.scrollElement,
@@ -288,6 +292,19 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       // Disable isAtEnd()'s default too; callers must supply an explicit threshold.
       scrollEndThreshold: -1,
       overscan: CHAT_TRANSCRIPT_OVERSCAN,
+    });
+    this.initialLayout = new ChatTranscriptInitialLayout({
+      host,
+      virtualizer: this.virtualizerController.getVirtualizer(),
+      scrollElement: () => this.scrollElement,
+      pending: () =>
+        !this.contentReady ||
+        callbacks.isContentReady?.() === false ||
+        this.offsetState.pendingScrollOffset !== null ||
+        this.pendingRowMeasureFrame !== null ||
+        this.isProgrammaticScroll,
+      initialOffset,
+      onReady: callbacks.onInitialLayoutReady,
     });
     if (initialOffset !== null) {
       this.offsetState.pendingScrollOffset = {
@@ -350,8 +367,8 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       this.offsetState.syncNativeOffset?.();
       this.host.requestUpdate();
     }
-    this.reconcileImplicitEndAnchor();
     this.applyPendingScrollOffset();
+    this.initialLayout.update();
   }
 
   disconnect(): void {
@@ -405,6 +422,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     announce: boolean,
     overlay: unknown = nothing,
     header: TranscriptHeader | null = null,
+    emptyContent?: TemplateResult,
   ): TemplateResult {
     const virtualizer = this.virtualizerController.getVirtualizer();
     // Keep old geometry during the gesture, while still virtualizing that old
@@ -426,6 +444,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
         announce,
         overlay,
         header,
+        emptyContent,
         messageRows: this.candidateMessageRowKeysById,
         renderKeyRows: this.candidateMessageRowsByKey,
       },
@@ -438,8 +457,17 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     snapshot: TranscriptRenderSnapshot<T>,
     capturePrepend: boolean,
   ): TemplateResult {
-    const { rows, renderRow, announcement, announce, overlay, header, messageRows, renderKeyRows } =
-      snapshot;
+    const {
+      rows,
+      renderRow,
+      announcement,
+      announce,
+      overlay,
+      header,
+      emptyContent,
+      messageRows,
+      renderKeyRows,
+    } = snapshot;
     const rowModelChanged =
       rows.length !== this.rowKeys.length ||
       rows.some((row, index) => row.key !== this.rowKeys[index]);
@@ -474,6 +502,10 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
             this.appliedHeaderHeight,
           );
         }
+        this.initialLayout.rendered();
+        if (emptyContent) {
+          return emptyContent;
+        }
         this.announcement.sync(announcement, announce);
         return renderChatTranscriptLayout({
           rows,
@@ -500,7 +532,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
           : new Set(nextRowKeys);
         return [...appRows].filter((row) => !nextRenderedKeys.has(row.dataset.virtualRowKey ?? ""));
       },
-      // SAFETY: the gate returns renderValue's output, always the renderChatTranscriptLayout TemplateResult here.
+      // SAFETY: both renderValue branches return a TemplateResult.
     ) as TemplateResult;
   }
 
@@ -611,7 +643,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     onSettled?: (position: ChatSessionScrollPosition) => void,
   ): void {
     this.cancelScroll();
-    this.implicitEndAnchorPending = false;
+    this.initialLayout.cancelEndAnchor();
     this.offsetState.pendingScrollOffset = { offset, stableFrames: 0, zeroMaxFrames: 0, onSettled };
     if (this.connected) {
       this.host.requestUpdate();
@@ -686,31 +718,6 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       this.offsetState.scrollCommand = { behavior: "auto", target: "index" };
       virtualizer.scrollToIndex(nextKeys.indexOf("presence:typing"), { align: "end" });
     }
-  }
-
-  private reconcileImplicitEndAnchor(): void {
-    if (!this.implicitEndAnchorPending || !this.connected || !this.contentReady) {
-      return;
-    }
-    const maxOffset = maxTranscriptScrollOffset(this.scrollElement);
-    const virtualizer = this.virtualizerController.getVirtualizer();
-    const scrollOffset = virtualizer.scrollOffset;
-    if (maxOffset === null || scrollOffset === null) {
-      return;
-    }
-    if (scrollOffset >= 0 && scrollOffset <= maxOffset) {
-      this.implicitEndAnchorPending = false;
-      return;
-    }
-    if (maxOffset !== 0) {
-      return;
-    }
-    this.implicitEndAnchorPending = false;
-    // The DOM clamps an underfilled end anchor to zero without a scroll event,
-    // so TanStack cannot reconcile its maximum-integer initial offset itself.
-    virtualizer.scrollOffset = 0;
-    virtualizer.scrollToOffset(0);
-    this.host.requestUpdate();
   }
 
   private applyPendingScrollOffset(): void {
