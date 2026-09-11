@@ -1,7 +1,7 @@
 export type DockPanelSide = "bottom" | "left" | "right";
 export type DockPanelPlacement = DockPanelSide | "main";
 
-type DockPanelLayout<TDock extends DockPanelPlacement> = {
+export type DockPanelLayout<TDock extends DockPanelPlacement> = {
   open: boolean;
   dock: TDock;
   height: number;
@@ -115,3 +115,19 @@ export const assistantPanelLayout = createDockPanelLayout({
   defaultHeight: 420,
   defaultWidth: 440,
 });
+
+/** Shared viewport geometry for live docks and their saved-layout preparation. */
+export function writeDockPanelReservation(
+  prefix: string,
+  layout: DockPanelLayout<DockPanelPlacement> | undefined,
+): void {
+  const style = document.documentElement.style;
+  style.setProperty(
+    `--oc-${prefix}-reserve-bottom`,
+    layout?.open && layout.dock === "bottom" ? `${layout.height}px` : "0px",
+  );
+  style.setProperty(
+    `--oc-${prefix}-reserve-right`,
+    layout?.open && layout.dock === "right" ? `${layout.width}px` : "0px",
+  );
+}

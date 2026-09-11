@@ -6,7 +6,11 @@ import {
   type ReactiveControllerHost,
   type TemplateResult,
 } from "lit";
-import type { DockPanelLayoutStore, DockPanelPlacement } from "./dock-panel-layout.ts";
+import {
+  writeDockPanelReservation,
+  type DockPanelLayoutStore,
+  type DockPanelPlacement,
+} from "./dock-panel-layout.ts";
 import "./resizable-divider.ts";
 
 type DockLayoutHost = ReactiveControllerHost & { readonly isConnected: boolean };
@@ -146,15 +150,7 @@ export class DockLayoutController<TDock extends DockPanelPlacement> implements R
     // Reserving the viewport here would apply the standalone dock a second time.
     const embedded = this.host instanceof HTMLElement && this.host.hasAttribute("embedded");
     const visible = !embedded && !this.isFullscreen() && this.options.isAvailable() && this.open;
-    const root = document.documentElement.style;
-    root.setProperty(
-      `--oc-${this.options.reservationPrefix}-reserve-bottom`,
-      visible && this.dock === "bottom" ? `${this.height}px` : "0px",
-    );
-    root.setProperty(
-      `--oc-${this.options.reservationPrefix}-reserve-right`,
-      visible && this.dock === "right" ? `${this.width}px` : "0px",
-    );
+    writeDockPanelReservation(this.options.reservationPrefix, visible ? this : undefined);
   }
 
   private resize(event: CustomEvent<{ splitRatio: number }>): void {
@@ -203,9 +199,7 @@ export class DockLayoutController<TDock extends DockPanelPlacement> implements R
     if (this.options.reserveViewport === false) {
       return;
     }
-    const root = document.documentElement.style;
-    root.setProperty(`--oc-${this.options.reservationPrefix}-reserve-bottom`, "0px");
-    root.setProperty(`--oc-${this.options.reservationPrefix}-reserve-right`, "0px");
+    writeDockPanelReservation(this.options.reservationPrefix, undefined);
   }
 
   private isFullscreen(): boolean {

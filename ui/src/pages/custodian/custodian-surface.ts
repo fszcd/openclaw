@@ -1,3 +1,4 @@
+import "../../styles/chat/startup-layout.css";
 import { consume } from "@lit/context";
 import { html, nothing, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";

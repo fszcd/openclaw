@@ -1,9 +1,10 @@
+import "../styles/rail-header.css";
 import { consume } from "@lit/context";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
-import "./openclaw-mascot.ts";
 import type { RouteId } from "../app-route-paths.ts";
+import "./openclaw-mascot.ts";
 import { chatInputOwnerForContext } from "../app/chat-input-owner.ts";
 import { applicationContext, type ApplicationContext } from "../app/context.ts";
 import {
@@ -11,21 +12,13 @@ import {
   isOptionalElementDefined,
 } from "../app/lazy-custom-element.ts";
 import { beginNativeWindowDrag } from "../app/native-window-drag.ts";
-import { CHAT_ROUTE_READY_EVENT } from "../app/route-transition.ts";
 import { t } from "../i18n/index.ts";
-import { listSelectableAgents } from "../lib/agents/display.ts";
 import { sessionNavigationTarget } from "../lib/sessions/route-navigation.ts";
-import {
-  areUiSessionKeysEquivalent,
-  buildAgentMainSessionKey,
-  normalizeAgentId,
-  resolveUiConfiguredMainKey,
-  resolveUiConversationIdentity,
-  resolveUiDefaultAgentId,
-} from "../lib/sessions/session-key.ts";
+import { areUiSessionKeysEquivalent } from "../lib/sessions/session-key.ts";
 import { OpenClawLightDomElement } from "../lit/openclaw-element.ts";
 import { SubscriptionsController } from "../lit/subscriptions-controller.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
+import { CHAT_ROUTE_READY_EVENT } from "../pages/chat/chat-history-events.ts";
 import { CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT } from "../pages/chat/chat-history-events.ts";
 import { buildHomeWorkContext, subscribeChatWorkContext } from "../pages/chat/chat-work-context.ts";
 import type { ChatPaneElement } from "../pages/chat/route-draft-focus-handoff.ts";
@@ -33,6 +26,13 @@ import {
   custodianSessionStore,
   type CustodianSessionStore,
 } from "../pages/custodian/custodian-session-store.ts";
+import {
+  assistantDestinationStorageKey,
+  loadAssistantDestination,
+  resolveAssistantHomeTarget,
+  isAssistantDestinationSuppressed,
+  type AssistantDestination,
+} from "./assistant-panel-destination.ts";
 import { DockLayoutController } from "./dock-layout-controller.ts";
 import { assistantPanelLayout, type DockPanelSide } from "./dock-panel-layout.ts";
 import { icons } from "./icons.ts";
@@ -50,7 +50,6 @@ const HOME_SESSION_ELEMENT = {
   loadModule: () => import("./home-session.runtime.ts"),
 };
 
-type AssistantDestination = "home" | "custodian";
 type AssistantDock = Exclude<DockPanelSide, "left">;
 
 export class OpenClawAssistantPanel extends OpenClawLightDomElement {
@@ -147,13 +146,7 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
       this.homeStarted = false;
       this.pendingPrimaryPane = null;
       this.homeDefaults = {};
-      let saved: Record<string, unknown> | null = null;
-      try {
-        saved = asNullableRecord(
-          JSON.parse(getSafeLocalStorage()?.getItem(this.targetStorageKey) ?? "null"),
-        );
-      } catch {}
-      this.destination = saved?.destination === "home" ? "home" : "custodian";
+      this.destination = loadAssistantDestination(this.targetScope);
     }
     if (this.context?.gateway.snapshot.phase === "connected") {
       // Roster/hello disappear during reconnect; keep the captured Home identity with its outbox.
@@ -239,7 +232,7 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
   };
 
   private get targetStorageKey(): string {
-    return `openclaw.assistant.panel.target.v1:${this.targetScope}`;
+    return assistantDestinationStorageKey(this.targetScope);
   }
 
   private persistTarget(): void {
@@ -252,26 +245,10 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
   }
 
   private get homeTarget() {
-    const defaults = this.homeDefaults;
-    const agents = listSelectableAgents(defaults.agentsList?.agents ?? []);
-    const defaultId = resolveUiDefaultAgentId(defaults);
-    // The sidebar switcher (agentSelection) is the only agent chooser; the dock
-    // shows the selected agent's Home and never grows a second switcher.
-    const rawSelectedId = this.context?.agentSelection.state.selectedId;
-    const selectedId = rawSelectedId ? normalizeAgentId(rawSelectedId) : "";
-    const agentId =
-      agents.find((agent) => agent.id === selectedId)?.id ??
-      agents.find((agent) => agent.id === defaultId)?.id ??
-      agents[0]?.id ??
-      defaultId;
-    return {
-      ...resolveUiConversationIdentity(
-        defaults,
-        buildAgentMainSessionKey({ agentId, mainKey: resolveUiConfiguredMainKey(defaults) }),
-        agentId,
-      ),
-      agentId,
-    };
+    return resolveAssistantHomeTarget(
+      this.homeDefaults,
+      this.context?.agentSelection.state.selectedId,
+    );
   }
 
   /** Ask OpenClaw hydrates lazily; only refresh when it actually becomes visible. */
@@ -297,13 +274,15 @@ export class OpenClawAssistantPanel extends OpenClawLightDomElement {
     if (!context || this.pageRouteId !== "chat") {
       return false;
     }
-    const page = resolveUiConversationIdentity(
-      this.homeDefaults,
-      this.pageSessionKey,
-      this.pageAgentId,
-    );
-    const home = this.homeTarget;
-    return page.sessionKey === home.sessionKey && normalizeAgentId(page.agentId) === home.agentId;
+    return isAssistantDestinationSuppressed({
+      destination: this.destination,
+      custodianSuppressed: this.custodianSuppressed,
+      pageRouteId: this.pageRouteId,
+      pageSessionKey: this.pageSessionKey,
+      pageAgentId: this.pageAgentId,
+      defaults: this.homeDefaults,
+      home: this.homeTarget,
+    });
   }
 
   private claimInput(region: "page" | "dock"): void {
