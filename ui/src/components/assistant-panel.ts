@@ -17,8 +17,8 @@ import { areUiSessionKeysEquivalent } from "../lib/sessions/session-key.ts";
 import { OpenClawLightDomElement } from "../lit/openclaw-element.ts";
 import { SubscriptionsController } from "../lit/subscriptions-controller.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
-import { CHAT_ROUTE_READY_EVENT } from "../pages/chat/chat-history-events.ts";
 import {
+  CHAT_ROUTE_READY_EVENT,
   CHAT_PANE_LIFECYCLE_CHANGED_EVENT,
   CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT,
 } from "../pages/chat/chat-history-events.ts";
